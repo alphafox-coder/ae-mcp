@@ -2,19 +2,89 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { AEWebSocketServer } from "./websocket.js";
+import fs from "node:fs";
+import path from "node:path";
 
 const server = new McpServer({
   name: "AfterEffectsServer",
   version: "1.0.0"
 });
 
-const wsServer = new AEWebSocketServer(3000);
+const configuredPort = Number.parseInt(process.env.AEMCP_PORT || "0", 10);
+const wsServer = new AEWebSocketServer(configuredPort);
+const wsPort = wsServer.getPort();
+const portFilePath = process.env.AEMCP_PORT_FILE || path.join(
+  process.env.APPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Roaming"),
+  "Adobe",
+  "CEP",
+  "extensions",
+  "aemcp",
+  "aemcp-port.json"
+);
+
+function writePortClaim() {
+  const payload = {
+    pid: process.pid,
+    port: wsPort,
+    updatedAt: new Date().toISOString()
+  };
+
+  fs.mkdirSync(path.dirname(portFilePath), { recursive: true });
+  fs.writeFileSync(portFilePath, JSON.stringify(payload, null, 2), "utf8");
+  console.error(`AEMCP claim written to ${portFilePath}`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensurePanelConnection(): Promise<void> {
+  if (wsServer.isConnected()) {
+    return;
+  }
+
+  writePortClaim();
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (wsServer.isConnected()) {
+      return;
+    }
+    await sleep(100);
+  }
+
+  throw new Error('After Effects not connected. Please ensure the AEMCP panel is open.');
+}
+
+function clearPortClaim() {
+  try {
+    if (!fs.existsSync(portFilePath)) {
+      return;
+    }
+
+    const raw = fs.readFileSync(portFilePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.pid === process.pid) {
+      fs.unlinkSync(portFilePath);
+    }
+  } catch (error) {
+    console.error("Failed to clear AEMCP claim:", error);
+  }
+}
+
+process.on("exit", clearPortClaim);
+process.on("SIGINT", () => {
+  clearPortClaim();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  clearPortClaim();
+  process.exit(0);
+});
 
 // Helper to execute ExtendScript
 async function executeInAE(jsx: string): Promise<string> {
-  if (!wsServer.isConnected()) {
-    throw new Error('After Effects not connected. Please ensure the AEMCP panel is open.');
-  }
+  await ensurePanelConnection();
   
   return await wsServer.sendCommand('eval', { jsx });
 }
@@ -93,6 +163,7 @@ server.tool(
   },
   async ({ html, css, js }) => {
     try {
+      await ensurePanelConnection();
       await wsServer.sendCommand('renderCustomPanel', {
         html: html,
         css: css || "",
@@ -124,6 +195,7 @@ server.tool(
   {},
   async () => {
     try {
+      await ensurePanelConnection();
       await wsServer.sendCommand('closePanel');
       return {
         content: [{
@@ -147,7 +219,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("After Effects MCP Server running...");
+  console.error(`After Effects MCP Server running on WebSocket port ${wsPort}...`);
 }
 
 main().catch(error => {

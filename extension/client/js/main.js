@@ -1,5 +1,9 @@
 const csInterface = new CSInterface();
-const wsClient = new WebSocketClient('ws://localhost:3000');
+const extensionPath = csInterface.getSystemPath('extension');
+const portFilePath = extensionPath + '/aemcp-port.json';
+const wsClient = new WebSocketClient();
+wsClient.portFilePath = portFilePath;
+wsClient.start();
 
 // Connection status
 wsClient.onConnectionChange = (connected) => {
@@ -275,6 +279,7 @@ window.addEventListener('error', (event) => {
 log('AEMCP panel loaded', 'success');
 log(`CSInterface version: ${csInterface.getSystemPath('extension')}`, 'debug');
 log(`Host environment: ${JSON.stringify(csInterface.getHostEnvironment())}`, 'debug');
+log(`Port claim file: ${portFilePath}`, 'debug');
 
 // Clear log button
 document.getElementById('clearLog').addEventListener('click', () => {

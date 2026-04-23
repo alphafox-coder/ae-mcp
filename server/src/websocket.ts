@@ -1,4 +1,5 @@
 import { WebSocket, WebSocketServer } from 'ws';
+import { AddressInfo } from 'node:net';
 
 export interface PendingCommand {
   resolve: (value: any) => void;
@@ -12,7 +13,7 @@ export class AEWebSocketServer {
   private pendingCommands = new Map<string, PendingCommand>();
   private commandTimeout = 30000; // 30 seconds
 
-  constructor(port: number = 3000) {
+  constructor(port: number = 0) {
     this.wss = new WebSocketServer({ port });
     
     this.wss.on('connection', (ws) => {
@@ -33,7 +34,16 @@ export class AEWebSocketServer {
       });
     });
 
-    console.error(`WebSocket server listening on port ${port}`);
+    console.error(`WebSocket server listening on port ${this.getPort()}`);
+  }
+
+  getPort(): number {
+    const address = this.wss.address() as AddressInfo | null;
+    if (!address) {
+      throw new Error('WebSocket server has no bound address');
+    }
+
+    return address.port;
   }
 
   private handleMessage(data: string) {

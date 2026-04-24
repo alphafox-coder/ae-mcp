@@ -8,6 +8,7 @@ import {
   startHeartbeat,
   stopHeartbeat,
 } from "./bridge-status.js";
+import { busPublish } from "./bus-client.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -22,11 +23,13 @@ const wsServer = new AEWebSocketServer(configuredPort, {
   onPanelConnect: () => {
     writeBridgeStatus({ connected: true, health: "healthy" });
     startHeartbeat();
+    busPublish("audit.panel.connect", { pid: process.pid, ts: Date.now() / 1e3 });
   },
   // ADR-0006 Rule 7: panel disconnect event
   onPanelDisconnect: () => {
     stopHeartbeat();
     writeBridgeStatus({ connected: false, health: "degraded" });
+    busPublish("audit.panel.disconnect", { pid: process.pid, ts: Date.now() / 1e3 });
   },
 });
 const wsPort = wsServer.getPort();

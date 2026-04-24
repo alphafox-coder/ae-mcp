@@ -2,6 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { AEWebSocketServer } from "./websocket.js";
+import {
+  initBridgeStatusWriter,
+  writeBridgeStatus,
+  startHeartbeat,
+  stopHeartbeat,
+} from "./bridge-status.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -11,8 +17,23 @@ const server = new McpServer({
 });
 
 const configuredPort = Number.parseInt(process.env.AEMCP_PORT || "0", 10);
-const wsServer = new AEWebSocketServer(configuredPort);
+const wsServer = new AEWebSocketServer(configuredPort, {
+  // ADR-0006 Rule 7: panel connect event
+  onPanelConnect: () => {
+    writeBridgeStatus({ connected: true, health: "healthy" });
+    startHeartbeat();
+  },
+  // ADR-0006 Rule 7: panel disconnect event
+  onPanelDisconnect: () => {
+    stopHeartbeat();
+    writeBridgeStatus({ connected: false, health: "degraded" });
+  },
+});
 const wsPort = wsServer.getPort();
+
+// ADR-0006 Rule 7: startup event — write manifest immediately after bind
+initBridgeStatusWriter(wsPort);
+writeBridgeStatus({ connected: false, health: "unknown" });
 const portFilePath = process.env.AEMCP_PORT_FILE || path.join(
   process.env.APPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Roaming"),
   "Adobe",
@@ -74,10 +95,16 @@ function clearPortClaim() {
 
 process.on("exit", clearPortClaim);
 process.on("SIGINT", () => {
+  // ADR-0006 Rule 7: shutdown event — write before clearing claim
+  stopHeartbeat();
+  writeBridgeStatus({ connected: false, health: "unknown" });
   clearPortClaim();
   process.exit(0);
 });
 process.on("SIGTERM", () => {
+  // ADR-0006 Rule 7: shutdown event — write before clearing claim
+  stopHeartbeat();
+  writeBridgeStatus({ connected: false, health: "unknown" });
   clearPortClaim();
   process.exit(0);
 });

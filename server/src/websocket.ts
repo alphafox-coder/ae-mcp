@@ -7,18 +7,25 @@ export interface PendingCommand {
   timeout: NodeJS.Timeout;
 }
 
+/** Lifecycle hooks for bridge_status.json writer (ADR-0006). */
+export interface AEWebSocketServerOptions {
+  onPanelConnect?: () => void;
+  onPanelDisconnect?: () => void;
+}
+
 export class AEWebSocketServer {
   private wss: WebSocketServer;
   private cepClient: WebSocket | null = null;
   private pendingCommands = new Map<string, PendingCommand>();
   private commandTimeout = 30000; // 30 seconds
 
-  constructor(port: number = 0) {
+  constructor(port: number = 0, options: AEWebSocketServerOptions = {}) {
     this.wss = new WebSocketServer({ port });
-    
+
     this.wss.on('connection', (ws) => {
       console.error('CEP panel connected');
       this.cepClient = ws;
+      options.onPanelConnect?.();
 
       ws.on('message', (data) => {
         this.handleMessage(data.toString());
@@ -27,6 +34,7 @@ export class AEWebSocketServer {
       ws.on('close', () => {
         console.error('CEP panel disconnected');
         this.cepClient = null;
+        options.onPanelDisconnect?.();
       });
 
       ws.on('error', (error) => {

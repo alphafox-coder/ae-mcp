@@ -51,9 +51,8 @@ export function initBridgeStatusWriter(port: number): void {
 export function writeBridgeStatus(
   state: Partial<Pick<BridgeStatus, 'connected' | 'health' | 'session_owner'>>
 ): void {
-  const payload: BridgeStatus = {
+  const payload: Omit<BridgeStatus, 'updated_at'> = {
     schema_version: 1,
-    updated_at: new Date().toISOString(),
     mcp: 'after-effects-alpha-depth',
     panel: 'AEMCP',
     connected: state.connected ?? false,

@@ -19,6 +19,8 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 
+let _sessionStartEmitted = false;
+
 const server = new McpServer({
   name: "AfterEffectsServer",
   version: "1.0.0"
@@ -32,8 +34,10 @@ const wsServer = new AEWebSocketServer(configuredPort, {
     startHeartbeat();
     busPublish("audit.panel.connect", { pid: process.pid, ts: Date.now() / 1e3 });
     sessionConnect(null); // panel_pid unavailable from WS callback
-    const startedAt = new Date().toISOString();
-    busPublish("audit.session.start", { server_pid: process.pid, started_at: startedAt });
+    if (!_sessionStartEmitted) {
+      busPublish("audit.session.start", { server_pid: process.pid, started_at: new Date().toISOString() });
+      _sessionStartEmitted = true;
+    }
   },
   // ADR-0006 Rule 7: panel disconnect event
   onPanelDisconnect: () => {

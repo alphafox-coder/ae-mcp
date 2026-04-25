@@ -45,16 +45,17 @@ function getDb(): ReturnType<typeof _require> {
     _db = new Database(BUS_DB_PATH);
     _db.exec(_SCHEMA);
   } catch (err) {
-    // better-sqlite3 not available (e.g. npm install not run yet) — log and no-op
-    console.error('bus-client: better-sqlite3 unavailable, bridge disabled:', err);
-    _db = null;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `bus-client: better-sqlite3 required for audit bridge. Run 'npm install' in vendor/ae-mcp/server. Underlying: ${msg}`
+    );
   }
   return _db;
 }
 
 /**
- * Publish an event to data/bus.db. Silently no-ops if better-sqlite3 unavailable.
- * Returns the inserted seq, or -1 if skipped.
+ * Publish an event to data/bus.db. Throws if better-sqlite3 unavailable.
+ * Returns the inserted seq.
  */
 export function busPublish(topic: string, payload: Record<string, unknown>): number {
   const db = getDb();

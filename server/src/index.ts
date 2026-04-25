@@ -9,6 +9,13 @@ import {
   stopHeartbeat,
 } from "./bridge-status.js";
 import { busPublish } from "./bus-client.js";
+import {
+  initSession,
+  onPanelConnect as sessionConnect,
+  onPanelDisconnect as sessionDisconnect,
+  recordCommand,
+  shutdown as sessionShutdown,
+} from "./session-state.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -24,12 +31,16 @@ const wsServer = new AEWebSocketServer(configuredPort, {
     writeBridgeStatus({ connected: true, health: "healthy" });
     startHeartbeat();
     busPublish("audit.panel.connect", { pid: process.pid, ts: Date.now() / 1e3 });
+    sessionConnect(null); // panel_pid unavailable from WS callback
+    const startedAt = new Date().toISOString();
+    busPublish("audit.session.start", { server_pid: process.pid, started_at: startedAt });
   },
   // ADR-0006 Rule 7: panel disconnect event
   onPanelDisconnect: () => {
     stopHeartbeat();
     writeBridgeStatus({ connected: false, health: "degraded" });
     busPublish("audit.panel.disconnect", { pid: process.pid, ts: Date.now() / 1e3 });
+    sessionDisconnect();
   },
 });
 const wsPort = wsServer.getPort();
@@ -37,6 +48,7 @@ const wsPort = wsServer.getPort();
 // ADR-0006 Rule 7: startup event — write manifest immediately after bind
 initBridgeStatusWriter(wsPort);
 writeBridgeStatus({ connected: false, health: "unknown" });
+initSession(); // ADR-0010: write initial session_state.json at boot
 const portFilePath = process.env.AEMCP_PORT_FILE || path.join(
   process.env.APPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Roaming"),
   "Adobe",
@@ -98,16 +110,20 @@ function clearPortClaim() {
 
 process.on("exit", clearPortClaim);
 process.on("SIGINT", () => {
-  // ADR-0006 Rule 7: shutdown event — write before clearing claim
+  // ADR-0006 Rule 7 + ADR-0010: shutdown event — write before clearing claim
   stopHeartbeat();
   writeBridgeStatus({ connected: false, health: "unknown" });
+  const final = sessionShutdown();
+  busPublish("audit.session.end", { server_pid: process.pid, ...final });
   clearPortClaim();
   process.exit(0);
 });
 process.on("SIGTERM", () => {
-  // ADR-0006 Rule 7: shutdown event — write before clearing claim
+  // ADR-0006 Rule 7 + ADR-0010: shutdown event — write before clearing claim
   stopHeartbeat();
   writeBridgeStatus({ connected: false, health: "unknown" });
+  const final = sessionShutdown();
+  busPublish("audit.session.end", { server_pid: process.pid, ...final });
   clearPortClaim();
   process.exit(0);
 });
@@ -127,6 +143,7 @@ server.tool(
     jsx: z.string().describe("ExtendScript code to execute. Already wrapped in undo group. Use 'return' to get values back.")
   },
   async ({ jsx }) => {
+    recordCommand("run_script");
     try {
       const result = await executeInAE(jsx);
       // Convert result to string for display
@@ -160,6 +177,7 @@ server.tool(
     scriptui_code: z.string().describe("ExtendScript ScriptUI code to create the tool. Use Window('palette') for non-blocking tools. Example: var tool = new Window('palette', 'My Custom Tool'); tool.add('button', undefined, 'Process'); tool.show();")
   },
   async ({ scriptui_code }) => {
+    recordCommand("create_scriptui_tool");
     try {
       // ScriptUI code runs directly as ExtendScript
       const result = await executeInAE(scriptui_code);
@@ -192,6 +210,7 @@ server.tool(
     js: z.string().optional().describe("JavaScript for interactions")
   },
   async ({ html, css, js }) => {
+    recordCommand("append_html_to_panel");
     try {
       await ensurePanelConnection();
       await wsServer.sendCommand('renderCustomPanel', {
@@ -224,6 +243,7 @@ server.tool(
   "Clear the HTML content from the AEMCP panel",
   {},
   async () => {
+    recordCommand("clear_panel_html");
     try {
       await ensurePanelConnection();
       await wsServer.sendCommand('closePanel');

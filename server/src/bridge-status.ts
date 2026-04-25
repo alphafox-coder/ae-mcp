@@ -6,9 +6,9 @@
  * Schema: v1 (9 fields). Atomic rename via fs.renameSync — ADR-0006 Rule 1.
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeManifest, type ManifestData } from './runtime-manifest.js';
 
 // ESM: __dirname polyfill (not available natively in ESM modules)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,14 +63,7 @@ export function writeBridgeStatus(
     server_port: _serverPort,
   };
 
-  const tmpPath = bridgeStatusPath + '.tmp';
-  try {
-    fs.mkdirSync(path.dirname(bridgeStatusPath), { recursive: true });
-    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
-    fs.renameSync(tmpPath, bridgeStatusPath); // ADR-0006 Rule 1: síncrono
-  } catch (err) {
-    console.error('bridge-status: failed to write manifest:', err);
-  }
+  writeManifest(bridgeStatusPath, payload as unknown as ManifestData);
 }
 
 /**

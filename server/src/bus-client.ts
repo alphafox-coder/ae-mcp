@@ -54,12 +54,12 @@ function getDb(): ReturnType<typeof _require> {
 }
 
 /**
- * Publish an event to data/bus.db. Throws if better-sqlite3 unavailable.
- * Returns the inserted seq.
+ * Publish an event to data/bus.db.
+ * Throws if better-sqlite3 unavailable.
+ * Returns the inserted seq, or -1 if the INSERT itself fails (logged to stderr).
  */
 export function busPublish(topic: string, payload: Record<string, unknown>): number {
   const db = getDb();
-  if (!db) return -1;
   try {
     const now = Date.now();
     const stmt = db.prepare(

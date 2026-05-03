@@ -74,6 +74,9 @@ function writePortClaim() {
   console.error(`AEMCP claim written to ${portFilePath}`);
 }
 
+// Publish at boot so the CEP panel can discover random WebSocket ports before any MCP tool runs.
+writePortClaim();
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
